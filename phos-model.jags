@@ -1,0 +1,329 @@
+model {
+  #-----------------------------------------------
+  #~~~~DATA:
+  # M: number of fish in augmented data
+  # K: number of capture events
+  # origin: [M] vector taking values 0 or 1
+  # sex: [M] vector taking values 0 or 1
+  # resid: [M] vector taking values 0 or 1
+  # z: [M x K] matrix taking values NA, 1, 2, 3, or 4
+  # y: [M x K] matrix taking values 1, 2, 3, or 4
+  # avail: [M x K] matrix taking values 0 or 1
+
+  #-----------------------------------------------
+  #~~~~STATES:
+  # Ecological States: 1 - Potential Population
+  #                    2 - Returning Fish
+  #                    3 - Kelt/Spawner
+  #                    4 - Trap
+
+  # Observed States:   1 - Not Observed
+  #                    2 - tangle-net trapped
+  #                    3 - tangle-net trapped Kelt
+  #                    4 - Trapped
+
+  #~~~~PARAMETERS:
+  # beta: origin ratio
+  # sex_ratio: male-female ratio
+  # resid_ratio: residual ratio
+  # gamma: entry probability
+  # delta: probability of becoming a spawner
+  # phi: probability of moving to trap
+  # p: tangle-net capture probability
+
+  #~~~~PRIORS AND CONSTRAINTS:
+  mean.p ~ dnorm(-1.5, 1)
+  # prior on tangle-net detetion efficiency which we expect to be low
+  sigma.p ~ dnorm(0, 0.5) T(0,)
+  # prior on standard deviation for detection efficieny random effect
+  tau.p <- pow(sigma.p, -2)
+  # JAGS operates on precision rather than variance
+
+  mean.gamma ~ dt(0, .1, 7)
+  # mean entry probability
+  sigma.gamma ~ dnorm(0, 0.5) T(0,)
+  # standard deviation for entry probability random effects (per event)
+  tau.gamma <- pow(sigma.gamma, -2)
+
+  beta_delta[1] ~ dt(0, 0.1, 7)
+  #intercept term for probability of becoming spawner
+  beta_delta[2] ~ dt(0, 0.25, 7)
+  # offset for natural origin
+  beta_delta[3] ~ dt(0, 0.25, 7)
+  # offest for residuals
+  beta_delta[4] ~ dt(0, 0.25, 7)
+  # interaction of origin and residual status
+
+  sigma.delta ~ dnorm(0, 0.5) T(0,)
+  #standard deviation for probability of becoming spawner random effect
+  tau.delta <- pow(sigma.delta, -2)
+
+  beta_phi[1] ~ dt(0, .1, 7)
+  #intercept term for probability of moving to trap
+  beta_phi[2] ~ dt(0, 0.25, 7)
+  beta_phi[3] ~ dt(0, 0.25, 7)
+  beta_phi[4] ~ dt(0, 0.25, 7)
+  sigma.phi ~ dnorm(0, 0.5) T(0,)
+  #standard deviation for probability of moving to trap random effect
+  tau.phi <- pow(sigma.phi, -2)
+
+  beta ~ dbeta(1, 1)
+  # uniform prior on proportion of hatchery fish in population
+  sex_ratio ~ dbeta(5, 5)
+  # more informative prior on sex ratio since it should be close to 50%
+  resid_ratio[1] ~ dbeta(1, 9)
+  # % of male population that residualize
+  # expect this to be low, this prior has a mean of 10%
+  resid_ratio[2] ~ dbeta(1, 9)
+  # % of female population that residualize
+
+  # gamma: probability of entering from potential population
+  # Event 0 through Event K - 2
+  for (k in 1:(K - 2)) {
+    e.gamma[k] ~ dnorm(0, tau.gamma)
+    logit(gamma[k]) <- mean.gamma + e.gamma[k]
+  }
+
+  # delta: probability of remaining in returning state
+  # Event 1 through Event K - 2
+  for (k in 1:(K - 3)) {
+    e.delta[1, k] ~ dnorm(0, tau.delta)
+    e.delta[2, k] ~ dnorm(0, tau.delta)
+    e.delta[3, k] ~ dnorm(0, tau.delta)
+    e.delta[4, k] ~ dnorm(0, tau.delta)
+    # Draw different random effect for each category of fish
+    # (More flexible than single shared random effect)
+    logit(delta[k, 1]) <- beta_delta[1] + e.delta[1, k]
+    # probability of transitioning to kelt for hatchery anadramous
+    logit(delta[k, 2]) <- beta_delta[1] + beta_delta[2] + e.delta[2, k]
+    # probability of transitioning to spawner for natural anadramous
+    logit(delta[k, 3]) <- beta_delta[1] + beta_delta[3] + e.delta[3, k]
+    # probability of transitioning to spawner for hatchery residuals
+    logit(delta[k, 4]) <- beta_delta[1] + beta_delta[2] + beta_delta[3] +
+    beta_delta[4] + e.delta[4, k]
+    # probability of transitioning to spawner for natural residuals
+  }
+
+  # phi: probability of moving to trap
+  # Event 1 through Event K - 1
+  for (k in 1:(K - 2)) {
+    e.phi[1, k] ~ dnorm(0, tau.phi)
+    e.phi[2, k] ~ dnorm(0, tau.phi)
+    e.phi[3, k] ~ dnorm(0, tau.phi)
+    e.phi[4, k] ~ dnorm(0, tau.phi)
+    # Draw different random effect for each category of fish
+    # (More flexible than single shared random effect)
+    logit(phi[k, 1]) <- beta_phi[1] + e.phi[1, k]
+    # probability of transitioning to the trap for hatchery anadramous
+    logit(phi[k, 2]) <- beta_phi[1] + beta_phi[2] + e.phi[2, k]
+    # probability of transitioning to the trap for natural anadramous
+    logit(phi[k, 3]) <- beta_phi[1] + beta_phi[3] + e.phi[3, k]
+    # probability of transitioning to the trap for hatchery residuals
+    logit(phi[k, 4]) <- beta_phi[1] + beta_phi[2] + beta_phi[3] +
+    beta_phi[4] + e.phi[4, k]
+    # probability of transitioning to the trap for natural residuals
+  }
+
+  # p: detection probability
+  # Event 1 through Event K - 1
+  for (k in 1:(K - 2)) {
+    e.p[k] ~ dnorm(0, tau.p)
+    logit(p[k]) <- mean.p + e.p[k]
+    # Detection efficiency varies among capture events around a common mean
+  }
+
+  #~~~~TRANSITION & OBSERVATION MATRICES
+  for (i in 1:M){
+    origin[i] ~ dbern(beta) # 0: HOR, 1: NOR
+    sex[i] ~ dbern(sex_ratio) # 0: M, 1: F
+    resid[i] ~ dbern(resid_ratio[1 + sex[i]]) # 0: anadramous, 1: residual
+
+    g[i] <- 1 + 1 * origin[i] + 2 * resid[i]
+
+    #~~ TRANSITION ~~#
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    # Indices as follows:
+    # [time, individual, current state, next state]
+    # Initial entry to Lewis River, k = 1
+    # Event 0 -> Event 1
+    ps[1, i, 1, 1] <- 1 - gamma[1]
+    ps[1, i, 1, 2] <- gamma[1]
+    ps[1, i, 1, 3] <- 0
+    ps[1, i, 1, 4] <- 0
+
+    ps[1, i, 2, 1] <- 0
+    ps[1, i, 2, 2] <- 1
+    ps[1, i, 2, 3] <- 0
+    ps[1, i, 2, 4] <- 0
+
+    ps[1, i, 3, 1] <- 0
+    ps[1, i, 3, 2] <- 0
+    ps[1, i, 3, 3] <- 1
+    ps[1, i, 3, 4] <- 0
+
+    ps[1, i, 4, 1] <- 0
+    ps[1, i, 4, 2] <- 0
+    ps[1, i, 4, 3] <- 0
+    ps[1, i, 4, 4] <- 1
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    #~~ OBSERVATION ~~#
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    # [time, individual, actual state, observed state]
+    # Event 1, k = 1
+    po[1, i, 1, 1] <- 1
+    po[1, i, 1, 2] <- 0
+    po[1, i, 1, 3] <- 0
+    po[1, i, 1, 4] <- 0
+
+    po[1, i, 2, 1] <- 1 - p[1] * avail[i, 2]
+    po[1, i, 2, 2] <- p[1] * avail[i, 2]
+    po[1, i, 2, 3] <- 0
+    po[1, i, 2, 4] <- 0
+
+    po[1, i, 3, 1] <- 1 - p[1] * avail[i, 2]
+    po[1, i, 3, 2] <- 0
+    po[1, i, 3, 3] <- p[1] * avail[i, 2]
+    po[1, i, 3, 4] <- 0
+
+    po[1, i, 4, 1] <- 1 - avail[i, 2]
+    po[1, i, 4, 2] <- 0
+    po[1, i, 4, 3] <- 0
+    po[1, i, 4, 4] <- avail[i, 2]
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    for (k in 2:(K - 2)) {
+      #~~ TRANSITION ~~#
+      #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+      # Event 1 -> Event 2, ..., Event K - 2 -> Event K - 1
+      ps[k, i, 1, 1] <- 1 - gamma[k]
+      ps[k, i, 1, 2] <- gamma[k]
+      ps[k, i, 1, 3] <- 0
+      ps[k, i, 1, 4] <- 0
+
+      ps[k, i, 2, 1] <- 0
+      ps[k, i, 2, 2] <- (delta[k - 1, g[i]] * avail[i, k]) + (1 - avail[i, k])
+      ps[k, i, 2, 3] <- (1 - delta[k - 1, g[i]]) * (1 - phi[k - 1, g[i]]) * (avail[i, k])
+      ps[k, i, 2, 4] <- (1 - delta[k - 1, g[i]]) * (phi[k - 1, g[i]]) * (avail[i, k])
+
+      ps[k, i, 3, 1] <- 0
+      ps[k, i, 3, 2] <- 0
+      ps[k, i, 3, 3] <- 1
+      ps[k, i, 3, 4] <- 0
+
+      ps[k, i, 4, 1] <- 0
+      ps[k, i, 4, 2] <- 0
+      ps[k, i, 4, 3] <- 0
+      ps[k, i, 4, 4] <- 1
+
+      #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+      #~~ OBSERVATION ~~#
+      #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+      # Event 2, ..., Event K - 1
+      po[k, i, 1, 1] <- 1
+      po[k, i, 1, 2] <- 0
+      po[k, i, 1, 3] <- 0
+      po[k, i, 1, 4] <- 0
+
+      po[k, i, 2, 1] <- 1 - p[k] * avail[i, k + 1]
+      po[k, i, 2, 2] <- p[k] * avail[i, k + 1]
+      po[k, i, 2, 3] <- 0
+      po[k, i, 2, 4] <- 0
+
+      po[k, i, 3, 1] <- 1 - p[k] * avail[i, k + 1]
+      po[k, i, 3, 2] <- 0
+      po[k, i, 3, 3] <- p[k] * avail[i, k + 1]
+      po[k, i, 3, 4] <- 0
+
+      po[k, i, 4, 1] <- 1 - avail[i, k + 1]
+      po[k, i, 4, 2] <- 0
+      po[k, i, 4, 3] <- 0
+      po[k, i, 4, 4] <- avail[i, k + 1]
+      #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    }
+
+    #~~ TRANSITION ~~#
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    # Event K - 1 -> Event K
+    # Turn all fish remaining on spawning grounds into spawners
+    ps[K - 1, i, 1, 1] <- 1
+    ps[K - 1, i, 1, 2] <- 0
+    ps[K - 1, i, 1, 3] <- 0
+    ps[K - 1, i, 1, 4] <- 0
+
+    ps[K - 1, i, 2, 1] <- 0
+    ps[K - 1, i, 2, 2] <- 1 - avail[i, K - 1]
+    ps[K - 1, i, 2, 3] <- (1 - phi[K - 2, g[i]]) * avail[i, K - 1]
+    ps[K - 1, i, 2, 4] <- phi[K - 2, g[i]] * avail[i, K - 1]
+
+    ps[K - 1, i, 3, 1] <- 0
+    ps[K - 1, i, 3, 2] <- 0
+    ps[K - 1, i, 3, 3] <- 1
+    ps[K - 1, i, 3, 4] <- 0
+
+    ps[K - 1, i, 4, 1] <- 0
+    ps[K - 1, i, 4, 2] <- 0
+    ps[K - 1, i, 4, 3] <- 0
+    ps[K - 1, i, 4, 4] <- 1
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    #~~ OBSERVATION ~~#
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+    # Event K
+    # Only trap observations after last tangle-net event.
+    po[K - 1, i, 1, 1] <- 1
+    po[K - 1, i, 1, 2] <- 0
+    po[K - 1, i, 1, 3] <- 0
+    po[K - 1, i, 1, 4] <- 0
+
+    po[K - 1, i, 2, 1] <- 1
+    po[K - 1, i, 2, 2] <- 0
+    po[K - 1, i, 2, 3] <- 0
+    po[K - 1, i, 2, 4] <- 0
+
+    po[K - 1, i, 3, 1] <- 1
+    po[K - 1, i, 3, 2] <- 0
+    po[K - 1, i, 3, 3] <- 0
+    po[K - 1, i, 3, 4] <- 0
+
+    po[K - 1, i, 4, 1] <- 1 - avail[i, K]
+    po[K - 1, i, 4, 2] <- 0
+    po[K - 1, i, 4, 3] <- 0
+    po[K - 1, i, 4, 4] <- avail[i, K]
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+  }
+
+  #~~~ LIKELIHOOD:
+  for (i in 1:M){
+    for (k in 2:K){
+      z[i, k] ~ dcat(ps[k - 1, i, z[i, k - 1], ])
+      y[i, k] ~ dcat(po[k - 1, i, z[i, k], ])
+    }
+  }
+
+  #~~~ DERIVED PARAMETERS:
+  for (i in 1:M){
+    NOR_entered[i] <- (1 - equals(z[i, K], 1)) * equals(origin[i], 1)
+    # If latent state is not equal to 1 at last event, and latent origin state
+    # is equal to 1 count as natural origin fish returning to Lewis River
+
+    HOR_entered[i] <- (1 - equals(z[i, K], 1)) * equals(origin[i], 0)
+    # If latent state is not equal to 1 at last event, and latent origin state
+    # is equal to 0 count as hatchery origin fish returning to Lewis River
+
+    NOR_spawn[i] <- equals(z[i, K], 3) * equals(origin[i], 1)
+    # If latent state is equal to 3 at last event, and latent origin state is
+    # equal to 0 count as natural origin spawner
+
+    HOR_spawn[i] <- equals(z[i, K], 3) * equals(origin[i], 0)
+    # If latent state is equal to 3 at last event, and latent origin state is
+    # equal to 0 count as hatchery origin spawner
+  }
+
+  N_NOR_entered <- sum(NOR_entered[])
+  N_HOR_entered <- sum(HOR_entered[])
+  N_NOR_spawn <- sum(NOR_spawn[])
+  N_HOR_spawn <- sum(HOR_spawn[])
+
+  pHOS <- N_HOR_spawn/(N_HOR_spawn + N_NOR_spawn)
+}
