@@ -331,12 +331,29 @@ sim_check <- function(dat) {
   invisible(dat)
 }
 
-library(R2jags)
+library(rjags)
+library(runjags) # Loading this first prevents warnings about JAGS version
+library(posterior) # Useful for postprocessing posterior samples
 
+res <- sim_model(500, pars)
 dat <- prep_data(res)
+sim_check(dat)
 
-fit <- jags(data = dat,
-            inits = NULL,
-            parameters.to.save = NULL,
-            model.file = "phos-model.jags",
-            n.iter = 1000, n.chains = 1)
+params <- c("phi", "gamma", "p", "beta", "delta", "resid_ratio",
+            "sex_ratio", "N_NOR_spawn", "N_HOR_spawn",
+            "N_NOR_entered", "N_HOR_entered",
+            "pHOS")
+
+fit <- runjags::run.jags(model    = "phos-model.jags",
+                         data     = dat$data,
+                         inits    = dat$init,
+                         monitor  = params,
+                         thin     = 1,
+                         n.chains = 1,
+                         burnin   = 4000,
+                         adapt    = 1000,
+                         sample   = 2500,
+                         ## method   = 'parallel'
+                         )
+
+post <- as_draws_rvars(fit$mcmc)
