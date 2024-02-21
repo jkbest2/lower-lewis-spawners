@@ -5,35 +5,40 @@ k <- 10
 ## Add the initial state and the final, trap-only event
 K <- k + 2
 ## Potential population size
-M <- 1200
+M <- 1500
 
 ##~~~~PRIORS AND CONSTRAINTS:
 ## Detection efficiency
 p <- 0.02
 
 ## Entry rate; will sample
-runsize <- 1200
+runsize <- 1857
 ## Proportion entering before each event (none in the final event; doesn't count
 ## residualized fish who all "enter" before the first event). Use k + 1 sequence
 ## because they are diff'd. This leaves k probabilities of entry and then
-gamma <- seq(-2, 2, length.out = k + 1) |>
-  pnorm() |>
-  diff()
+## gamma <- seq(-2, 2, length.out = k + 1) |>
+##   pnorm() |>
+##   diff()
+## Entry rate from the data
+gamma <- c(0.0830998826355685, 0.216758138094457, 0.0568802271749238,
+           0.227777798875943, 0.0464788101688508, 0.0437682338469231,
+           0.0432419946705794, 0.0461711834433321, 0.0430909529926357,
+           0.0242107786896443)
 ## No fish enter the system in the zero'th or last periods
 gamma <- c(0, gamma, 0)
 
-## uniform prior on proportion of hatchery fish in population
+## Proportion of hatchery fish in population
 beta <- 0.51
-## Sex ratio assumed 55%
-sex_ratio <- 0.55
+## Sex ratio
+sex_ratio <- 0.51
 ## Residualization ratios: males at 7.7% and females at 0.7%
 resid_ratio <- c(0.077, 0.007)
 
 ## delta: probability of remaining in returning state
-delta <- 0.2
+delta <- 0.8
 
 ## phi: probability of moving to trap
-phi <- 0.66
+phi <- 0.65
 
 pars <- list(gamma = gamma,
              beta = beta,
@@ -57,32 +62,30 @@ sim_eco <- function(indiv, pars, k = 10) {
   phi <- pars$phi
 
   z <- rep(NA_integer_, k + 2)
-  z[1] <- 1L # Always start in the "available" state
+  z[1] <- 1L # Always start in the available (1) state
 
-  ## Second state can transition to "river" (2) state, either as a residual or as a returner
-  if (indiv$resid || rbinom(1, 1, gamma[2])) {
-    z[2] <- 2L
-  } else {
-    z[2] <- 1L
-  }
+  ## Second state can transition to returner (2) state
+  z[2] <- sample(1:4, 1, FALSE, c(1 - gamma[2], gamma[2], 0, 0))
 
-  ## Third through penultimate states are determined by transition probabilities
-  for (t in 2:k) {
-    if (z[t] == 1) {
-      ## Transition to river wp gamma, otherwise remain available
-      z[t + 1] <- sample(1:4, 1, FALSE, c(1 - gamma[t + 1], gamma[t + 1], 0, 0))
-    } else if (z[t] == 2) {
-      z[t + 1] <- sample(1:4, 1, FALSE, c(0, delta, 1 - delta - phi, phi))
-    } else if (z[t] == 3) {
-      z[t + 1] <- 3
-    } else if (z[t] == 4) {
-      z[t + 1] <- 4
+  ## Second through penultimate states are determined by transition
+  ## probabilities
+  for (t in 2:(k + 1)) {
+    if (z[t - 1] == 1) {
+      z[t] <- sample(1:4, 1, FALSE, c(1 - gamma[t], gamma[t], 0, 0))
+    } else if (z[t - 1] == 2) {
+      z[t] <- sample(1:4, 1, FALSE,
+                     c(0, delta, (1 - delta) * (1 - phi), (1 - delta) * phi))
+    } else if (z[t - 1] == 3) {
+      z[t] <- 3
+    } else if (z[t - 1] == 4) {
+      z[t] <- 4
     }
   }
 
-  ## Final transition can only be to the trap and only if the fish is already a returner
+  ## Final transition moves all (available) fish in returner state to either
+  ## spawner or trap state, though only trapped fish will be observed.
   if (z[k + 1] == 2) {
-    z[k + 2] <- sample(1:4, 1, FALSE, c(0, 1 - phi, 0, phi))
+    z[k + 2] <- sample(1:4, 1, FALSE, c(0, 0, 1 - phi, phi))
   } else {
     z[k + 2] <- z[k + 1]
   }
@@ -150,10 +153,15 @@ sim_obseco <- function(z, y) {
 
 sim_avail <- function(z) {
   a <- rep_along(z, 1)
-  if (any(z == 4)) {
+  n <- length(z)
+
+  ## Only need to mark as unavailable if collected in the trap *before* the
+  ## final event
+  if (any(z[seq_len(n - 1)] == 4)) {
     trap_t <- min(which(z == 4))
     a[(trap_t + 1):length(z)] <- 0
   }
+  stopifnot(length(a) == length(z))
   a
 }
 
