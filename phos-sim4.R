@@ -172,13 +172,6 @@ sim_tomat <- function(l) {
   m
 }
 
-i <- sim_indiv(pars)
-z <- sim_eco(i, pars, k = 10)
-y <- sim_obs(z, pars)
-zobs <- sim_obseco(z, y)
-a <- sim_avail(z)
-
-
 sim_model <- function(n, pars) {
   indivs <- replicate(n, sim_indiv(pars), simplify = FALSE)
   indiv_df <- list_transpose(indivs) |>
@@ -197,10 +190,6 @@ sim_model <- function(n, pars) {
        resid = indiv_df$resid)
 }
 
-res <- sim_model(1200, pars)
-plot_obs(res)
-number_handled(res)
-
 plot_obs <- function(res) {
   par(mfrow = c(1, 2))
   ## Collected in the river each observation event
@@ -208,13 +197,6 @@ plot_obs <- function(res) {
   ## Collected in the trap
   barplot(colSums(res$y == 4, na.rm = TRUE), main = "Trap")
 }
-
-## check_results <- function(res) {
-##   nas <- lapply(res, anyNA)
-##   if (any(lapply(res, anyNA)) {
-##       stop("NA in results")
-##   }
-## }
 
 number_handled <- function(res) {
   y <- res$y
@@ -228,33 +210,8 @@ number_handled <- function(res) {
   list(marked = mark, trapped = trap, recaptured = recap)
 }
 
-pad_results <- function(res, add = 1000) {
-  which_obs <- apply(res$y, 1, \(r) any(r > 1)) |> which()
-  origin <- c(res$origin[which_obs],
-              rep(NA, add))
-  sex <- c(res$sex[which_obs],
-           rep(NA, add))
-  resid <- c(res$resid[which_obs],
-             rep(NA, add))
-  z <- rbind(res$z[which_obs, ],
-             matrix(NA, nrow = add, ncol = ncol(res$z)))
-  y <- rbind(res$y[which_obs, ],
-             matrix(1, nrow = add, ncol = ncol(res$y)))
-  avail <- rbind(res$avail[which_obs, ],
-                 matrix(TRUE, nrow = add, ncol = ncol(y)))
-
-  if (!all.equal(nrow(y), nrow(z), nrow(avail),
-                 length(origin), length(sex),
-                 length(resid))) {
-    stop("Not all have same number of rows")
   }
 
-  list(origin = origin,
-       sex = sex,
-       resid = resid,
-       z = z,
-       y = y,
-       avail = avail)
 }
 
 prep_data <- function(res) {
