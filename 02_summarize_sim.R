@@ -43,5 +43,6 @@ sim_handled <- function(res) {
       n_recap = sum(recaptured),
       n_trapped = sum(trapped),
       .by = c(final_state)
-    )
+    ) |>
+    arrange(final_state)
 }
