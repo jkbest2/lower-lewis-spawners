@@ -190,15 +190,38 @@ sim_avail <- function(z) {
   a
 }
 
-sim_model <- function(n, pars) {
-  indivs <- replicate(n, sim_indiv(pars), simplify = FALSE)
+sim_model <- function(n = NULL, indivs = NULL, zsfull = NULL, pars) {
+  ## Check inputs for consistency
+  if (is.null(n) && is.null(indivs)) {
+    stop("Must provide either n or indivs")
+  }
+  if (!is.null(n) && !is.null(indivs) && length(indivs) != n) {
+    stop("If both specified, length(indivs) must be n")
+  }
+  if (is.null(indivs) && !is.null(zsfull)) {
+    stop("indivs must be provided if zsfull is provided")
+   }
+  if (is.null(n) & !is.null(indivs)) {
+    n <- length(indivs)
+  }
+
+  ## If not provided, generate a list of individual fish
+  if (is.null(indivs)) {
+    indivs <- replicate(n, sim_indiv(pars), simplify = FALSE)
+  }
+  ## Summarize in to data frame so that identity vectors can be extracted later
   indiv_df <- purrr::list_transpose(indivs) |>
     tibble::as_tibble()
-  zsfull <- purrr::map(indivs, sim_eco, pars = pars)
+  ## Generate state vectors if not provided
+  if (is.null(zsfull)) {
+    zsfull <- purrr::map(indivs, sim_eco, pars = pars)
+  }
+  ## Generate observation, oberved states, and availability vectors
   ys <- purrr::map(zsfull, sim_obs, pars = pars)
   zs <- purrr::map2(zsfull, ys, sim_obseco)
   as <- purrr::map(zsfull, sim_avail)
 
+  ## Combine into matrices for passing to JAGS
   list(z = sim_tomat(zs),
        zfull = sim_tomat(zsfull),
        y = sim_tomat(ys),
