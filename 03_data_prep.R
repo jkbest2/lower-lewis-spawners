@@ -13,7 +13,7 @@ sim_tomat <- function(l) {
   m
 }
 
-prep_data <- function(res) {
+prep_data <- function(res, pars = NULL) {
   obs <- apply(res$y, 1, \(r) any(r != 1))
 
   ## Split each observation type into observed and unobserved for data and inits
@@ -44,16 +44,33 @@ prep_data <- function(res) {
                z = res$z,
                y = res$y,
                avail = res$avail)
-  init <- function() {
-    list(z = z_init,
-         origin = origin_init,
-         sex = sex_init,
-         resid = resid_init)
+  if (is.null(pars)) {
+    init <- function() {
+      list(z = z_init,
+           origin = origin_init,
+           sex = sex_init,
+           resid = resid_init)
     }
-
-  list(data = data,
-       init = init)
+  }
+  else {
+    init <- function() {
+      list(z = z_init,
+           origin = origin_init,
+           sex = sex_init,
+           resid = resid_init,
+           mean.p = qlogis(pars$p),
+           mean.gamma = mean(qlogis(pars$gamma)),
+           beta_delta = apply(pars$delta, 2, \(c) mean(qlogis(c))),
+           beta_phi = apply(pars$phi, 2, \(c) mean(qlogis(c))),
+           beta = pars$beta,
+           sex_ratio = pars$sex_ratio,
+           resid_ratio = pars$resid_ratio)
+    }
+  }
+  list(init = init, data = data)
 }
+
+
 
 sim_check <- function(dat) {
   M <- dat$data$M
