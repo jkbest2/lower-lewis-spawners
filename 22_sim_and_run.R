@@ -7,7 +7,7 @@ source("01_simulation.R")
 source("02_summarize_sim.R")
 source("03_data_prep.R")
 
-post16 <- read_rds("data/post2016.rds")
+post16 <- read_rds("data/pHOS_mcmc_differentRE_04292018.rds")
 med16 <- map(post16, median)
 
 M <- 1857 # Total number of candidate fish
